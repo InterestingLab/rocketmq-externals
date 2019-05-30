@@ -74,15 +74,21 @@ class CachedMQConsumer private(
   private def poll(name: String, queueOffset: Long) {
     var p = client.pull(new MessageQueue(topic, name, queueId), "*", queueOffset, maxBatchSize)
     var i = 0
-    while (p.getPullStatus != PullStatus.FOUND){
+    var continuePull = true
+    while (p.getPullStatus != PullStatus.FOUND && continuePull == true){
       // it maybe not get the message, so we will retry
       Thread.sleep(100)
       logError(s"Polled failed for $queueId $name $queueOffset $maxBatchSize ${p.toString}")
       i = i + 1
       p = client.pull(new MessageQueue(topic, name, queueId), "*", queueOffset, maxBatchSize)
       if (i > 10){
-        throw new IllegalStateException(s"Failed to get records for $groupId $topic $queueId $name $queueOffset after polling," +
+        if (p.getPullStatus == PullStatus.NO_NEW_MSG) {
+          logWarn("do not pull due to p.getPullStatus == PullStatus.NO_NEW_MSG")
+          continuePull = false
+        } else {
+          throw new IllegalStateException(s"Failed to get records for $groupId $topic $queueId $name $queueOffset after polling," +
           s"due to ${p.toString}")
+        }
       }
     }
     buffer += (name -> p.getMsgFoundList.iterator)
